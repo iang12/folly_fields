@@ -317,7 +317,7 @@ class _AbstractListState<
                   showSearch<T?>(
                     context: context,
                     delegate: InternalSearch<T, UI, C>(
-                      buildResultItem: _buildResultItem,
+                      buildResultItem: _newBuildResultItem,
                       canDelete: (T model) =>
                           _delete &&
                           FollyFields().isWeb &&
@@ -505,6 +505,98 @@ class _AbstractListState<
           ),
         );
       },
+    );
+  }
+
+  Widget _newBuildResultItem({
+    required T model,
+    required bool selection,
+    required bool canDelete,
+    Future<void> Function()? afterDeleteRefresh,
+    Function? onTap,
+  }) {
+    return ListTile(
+      leading: Column(
+        mainAxisSize: MainAxisSize.max,
+        mainAxisAlignment: MainAxisAlignment.center,
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: <Widget>[
+          widget.multipleSelection && onTap == null
+              ? FaIcon(
+                  selection
+                      ? FontAwesomeIcons.checkCircle
+                      : FontAwesomeIcons.circle,
+                )
+              : widget.uiBuilder.getLeading(model),
+        ],
+      ),
+      title: widget.uiBuilder.getTitle(model),
+      subtitle: widget.uiBuilder.getSubtitle(model),
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        mainAxisAlignment: MainAxisAlignment.end,
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: <Widget>[
+          ...permissions.entries.map(
+            (MapEntry<ConsumerPermission, AbstractRoute> entry) {
+              ConsumerPermission permission = entry.key;
+              // TODO - Create an Action Route component.
+              return FutureBuilder<bool>(
+                initialData: false,
+                future: widget.actionFunctions![entry.value]!(context, model),
+                builder: (BuildContext context, AsyncSnapshot<bool> snapshot) {
+                  if (snapshot.hasData && snapshot.data!) {
+                    return IconButton(
+                      tooltip: permission.name,
+                      icon: IconHelper.faIcon(permission.iconName),
+                      onPressed: () async {
+                        dynamic refresh = await Navigator.of(context).pushNamed(
+                          entry.value.path,
+                          arguments: model,
+                        );
+
+                        if (refresh is bool && refresh) {
+                          await _loadData(context, clear: true);
+                        }
+                      },
+                    );
+                  }
+                  return Container(width: 0, height: 0);
+                },
+              );
+            },
+          ),
+          if (canDelete)
+            IconButton(
+              icon: Icon(FontAwesomeIcons.trashAlt),
+              onPressed: () async {
+                bool refresh = await _deleteEntity(model, ask: true);
+                if (afterDeleteRefresh != null && refresh) {
+                  await afterDeleteRefresh();
+                }
+              },
+            ),
+        ],
+      ),
+      onTap: () {
+        _internalRoute(model, !selection);
+        showDialog(
+          context: context,
+          builder: (BuildContext context) {
+            return AlertDialog(
+              actions: <Widget>[
+                ElevatedButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: Text('Sair'),
+                )
+              ],
+              content: Text('${model.toString()} selecionado!'),
+            );
+          },
+        );
+      },
+      onLongPress:
+          widget.onLongPress == null ? null : () => _internalLongPress(model),
     );
   }
 
@@ -828,7 +920,9 @@ class InternalSearch<
                             model: snapshot.data![index],
                             selection: false,
                             canDelete: canDelete(snapshot.data![index]),
-                            onTap: (W entity) => close(context, entity),
+                            onTap: (W entity) {
+                              debugPrint('$entity');
+                            },
                             afterDeleteRefresh: () async => query += '%',
                           );
                         },
